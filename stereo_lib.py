@@ -4,25 +4,33 @@ import cv2
 import numpy as np
 
 # KITTI Parameters:
-R_KITTI = np.array(
-    [
-        [0.99955687, 0.02232752, -0.0196868],
-        [-0.02230226, 0.99975017, 0.00150172],
-        [0.01971541, -0.001062, 0.9998051],
-    ]
-)
-T_KITTI = np.array([0.53267121, -0.00526146, 0.00782809])
+
+R_L = np.transpose(np.matrix([[9.999758e-01, -5.267463e-03, -4.552439e-03],
+                              [5.251945e-03, 9.999804e-01, -3.413835e-03],
+                              [4.570332e-03, 3.389843e-03, 9.999838e-01]]))
+R_R = np.matrix([[9.995599e-01, 1.699522e-02, -2.431313e-02],
+                 [-1.704422e-02, 9.998531e-01, -1.809756e-03],
+                 [2.427880e-02, 2.223358e-03, 9.997028e-01]])
+R_KITTI = R_L * R_R
+T_L = np.transpose(np.matrix([5.956621e-02, 2.900141e-04, 2.577209e-03]))
+T_R = np.transpose(np.matrix([-4.731050e-01, 5.551470e-03, -5.250882e-03]))
+T_KITTI = T_L - T_R
 distCoeffs1_KITTI = np.array(
-    [-0.3691481, 0.1968681, 0.00135347, 0.00056776, -0.06770705]
+    [-3.691481e-01, 1.968681e-01, 1.353473e-03, 5.677587e-04, -6.770705e-02]
 )
+
 distCoeffs2_KITTI = np.array(
-    [-0.3639558, 0.1788651, 0.00060297, -0.00039224, -0.0538246]
+    [-3.639558e-01, 1.788651e-01, 6.029694e-04, -3.922424e-04, -5.382460e-02]
 )
+
 K1_KITTI = np.array(
-    [[959.791, 0.0, 696.0217], [0.0, 956.9251, 224.1806], [0.0, 0.0, 1.0]]
+    [[9.597910e+02, 0.000000e+00, 6.960217e+02], [0.000000e+00, 9.569251e+02,
+                                                  2.241806e+02], [0.000000e+00, 0.000000e+00, 1.000000e+00]]
 )
+
 K2_KITTI = np.array(
-    [[903.7596, 0.0, 695.7519], [0.0, 901.9653, 224.2509], [0.0, 0.0, 1.0]]
+    [[9.037596e+02, 0.000000e+00, 6.957519e+02], [0.000000e+00, 9.019653e+02,
+                                                  2.242509e+02], [0.000000e+00, 0.000000e+00, 1.000000e+00]]
 )
 
 
@@ -97,18 +105,16 @@ def compute_disparity(
     if np.ndim(right_rectified) == 3:
         right_rectified = cv2.cvtColor(right_rectified, cv2.COLOR_BGR2GRAY)
 
+    window_size = 9
+    minDisparity = 1
     alg = cv2.StereoSGBM_create(
-        minDisparity=0,
-        numDisparities=192,
-        blockSize=3,
-        P1=9,
-        P2=108,
-        disp12MaxDiff=1,
-        preFilterCap=63,
-        uniquenessRatio=10,
-        speckleWindowSize=100,
-        speckleRange=32,
-        mode=cv2.STEREO_SGBM_MODE_HH,
+        blockSize=10,
+        numDisparities=64,
+        preFilterCap=10,
+        minDisparity=minDisparity,
+        P1=4 * 3 * window_size ** 2,
+        P2=32 * 3 * window_size ** 2,
+        mode=cv2.STEREO_SGBM_MODE_HH
     )
 
     disparity_int16 = alg.compute(left_rectified, right_rectified)
@@ -170,11 +176,9 @@ def disparity_to_pointcloud(
     # Get 4x4 perspective transformation from stereoRectify()
     size = (disparity_int16.shape[1],
             disparity_int16.shape[0])  # e.g., (1280,720)
-
+    IMG_SIZE = (1392, 512)
     _, _, _, _, Q, _, _ = cv2.stereoRectify(
-        K1, distCoeffs1, K2, distCoeffs2, size, R, T
-    )
-
+        K1, distCoeffs1, K2, distCoeffs2, IMG_SIZE, R_L, T_L, newImageSize=size)
     # Get 3D location of each pixel
     # pointcloud.shape = (height, width, 3), where 3 is for (x,y,z)
     # "16*" because disparity_s16 is in 11.4 format
